@@ -7,6 +7,68 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 import time
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+def check_credentials():
+    """Check if credentials are set in environment variables"""
+    username = os.getenv('AVAC_USERNAME')
+    password = os.getenv('AVAC_PASSWORD')
+    
+    if not username or not password:
+        print("Error: Credentials not found in .env file")
+        print("Please create a .env file with your AVAC credentials:")
+        print("AVAC_USERNAME=your_username")
+        print("AVAC_PASSWORD=your_password")
+        return False
+    return True
+
+def main():
+    """Main function to run the registration tool"""
+    if not check_credentials():
+        return
+
+    chrome_options = Options()
+    chrome_options.add_argument('--log-level=3')  # Suppress console logs
+    chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])  # Disable logging
+    service = Service(ChromeDriverManager().install())
+    driver = webdriver.Chrome(service=service, options=chrome_options)
+
+    try:
+        print("Starting Tennis Registration Tool...")
+        print("Please wait while the browser initializes...")
+        
+        # Login process
+        driver.get("https://avac.clubautomation.com/event/view-all?eventId=243922&schedule=434013&date=03/29/2025&do_action=attendance#event-info")
+        driver.implicitly_wait(3)
+        
+        print("Logging in...")
+        driver.find_element(By.NAME, "login").send_keys(os.getenv('AVAC_USERNAME'))
+        driver.find_element(By.NAME, "password").send_keys(os.getenv('AVAC_PASSWORD'))
+        driver.find_element(By.ID, "loginButton").click()
+        driver.implicitly_wait(3)
+        
+        print("Selecting position...")
+        driver.find_element(By.NAME, "selectPosButton").click()
+        
+        # Process all programs
+        process_programs(driver)
+        
+        print("\nRegistration process completed!")
+        print("Please review the summary above for any issues or manual actions needed.")
+        
+    except Exception as e:
+        print(f"\nAn error occurred: {str(e)}")
+        print("Please check your internet connection and try again.")
+    finally:
+        input("\nPress Enter to close the browser and exit...")
+        driver.quit()
+
+if __name__ == "__main__":
+    main()
 
 def wait_and_click(driver, by, value, timeout=10):
     """Wait for element to be clickable and click it"""
@@ -500,25 +562,3 @@ def process_programs(driver):
             print(f"  {day}:")
             for name in names:
                 print(f"    {name}")
-
-chrome_options = Options()
-chrome_options.add_argument('--log-level=3')  # Suppress console logs
-chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])  # Disable logging
-service = Service(ChromeDriverManager().install())
-driver = webdriver.Chrome(service=service, options=chrome_options)
-
-try:
-    # Login process
-    driver.get("https://avac.clubautomation.com/event/view-all?eventId=243922&schedule=434013&date=03/29/2025&do_action=attendance#event-info")
-    driver.implicitly_wait(3)
-    driver.find_element(By.NAME, "login").send_keys("USERNAME")
-    driver.find_element(By.NAME, "password").send_keys("PASSWORD")
-    driver.find_element(By.ID, "loginButton").click()
-    driver.implicitly_wait(3)
-    driver.find_element(By.NAME, "selectPosButton").click()
-    
-    # Process all programs
-    process_programs(driver)
-
-finally:
-    driver.quit()

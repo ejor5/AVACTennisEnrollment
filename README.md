@@ -13,48 +13,28 @@ This tool automates the process of registering tennis students from one month to
 
 ## Prerequisites
 
-- Python 3.8 or higher
+- Windows operating system
+- Python 3.8 or higher installed
 - Chrome browser installed
 - Internet connection
 
-## Installation
+## Installation & Usage
 
-1. Clone this repository:
-```bash
-git clone https://github.com/yourusername/tennis-registration.git
-cd tennis-registration
-```
-
-2. Install the required packages:
-```bash
-pip install -r requirements.txt
-```
-
-3. Create a `.env` file in the project root and add your credentials:
-```
-AVAC_USERNAME=your_username
-AVAC_PASSWORD=your_password
-```
-
-## Usage
-
-1. Run the script:
-```bash
-python main.py
-```
-
-2. The script will:
+1. Download or clone this repository
+2. Double-click `setup.bat`
+3. If this is your first time running the tool:
+   - The script will check if Python is installed
+   - Create a virtual environment
+   - Install required packages
+   - Ask for your AVAC credentials
+   - Save your credentials securely
+4. The tool will automatically start and:
    - Log in to the AVAC system
    - Process all tennis programs
    - Show attendance records
    - Prompt for re-enrollment decisions
    - Register students for the next month
    - Display a final summary
-
-3. Follow the prompts in the terminal to:
-   - Review attendance records
-   - Decide whether to re-enroll students with low attendance
-   - Monitor the registration process
 
 ## Output
 
@@ -71,14 +51,15 @@ The script will display:
 - Students with less than 3 present sessions will be flagged for re-enrollment
 - Waitlisted students will be reported for manual review
 - The script automatically handles the registration process for the next month
+- Your credentials are stored securely in a `.env` file
 
 ## Troubleshooting
 
 If you encounter any issues:
-1. Ensure Chrome is installed and up to date
-2. Check your internet connection
-3. Verify your credentials in the `.env` file
-4. Make sure all required packages are installed
+1. Make sure Python is installed and added to PATH
+2. Ensure Chrome is installed and up to date
+3. Check your internet connection
+4. Try running `setup.bat` again
 
 ## Contributing
 

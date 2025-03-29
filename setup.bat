@@ -20,14 +20,23 @@ if errorlevel 1 (
     exit
 )
 
-:: Create virtual environment if it doesn't exist
-if not exist "venv" (
-    echo Creating virtual environment...
-    python -m venv venv
+:: Remove existing venv if it exists
+if exist "venv" (
+    echo Removing existing virtual environment...
+    rmdir /s /q venv
 )
 
+:: Create new virtual environment
+echo Creating virtual environment...
+python -m venv venv --clear
+
 :: Activate virtual environment
+echo Activating virtual environment...
 call venv\Scripts\activate.bat
+
+:: Upgrade pip in virtual environment
+echo Upgrading pip...
+python -m pip install --upgrade pip
 
 :: Install requirements
 echo Installing required packages...

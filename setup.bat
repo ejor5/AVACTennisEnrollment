@@ -48,15 +48,29 @@ if not exist ".env" (
     echo Please enter your AVAC credentials:
     set /p username="Username: "
     set /p password="Password: "
-    echo AVAC_USERNAME=%username%> .env
-    echo AVAC_PASSWORD=%password%>> .env
+    
+    :: Create .env file with proper line endings
+    (
+        echo AVAC_USERNAME=%username%
+        echo AVAC_PASSWORD=%password%
+    ) > .env
+    
+    :: Verify the file was created
+    if exist ".env" (
+        echo Credentials saved successfully!
+    ) else (
+        echo Error: Failed to create .env file
+        echo Please try running setup.bat as administrator
+        pause
+        exit
+    )
 )
 
-:: Run the main script
+:: Run the main script with full path to Python
 echo.
 echo Starting Tennis Registration Tool...
 echo.
-python main.py
+call venv\Scripts\python.exe main.py
 
 :: Keep the window open if there's an error
 pause 

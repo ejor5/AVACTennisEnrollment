@@ -636,8 +636,8 @@ def main():
         driver.implicitly_wait(3)
         
         print("Logging in...")
-        driver.find_element(By.NAME, "login").send_keys('ejor50k@gmail.com')
-        driver.find_element(By.NAME, "password").send_keys('vizta2-tusgAz-cysdaz')
+        driver.find_element(By.NAME, "login").send_keys('YOUR AVAC EMAIL')
+        driver.find_element(By.NAME, "password").send_keys('YOUR AVAC PASSWORD')
         driver.find_element(By.ID, "loginButton").click()
         driver.implicitly_wait(3)
         

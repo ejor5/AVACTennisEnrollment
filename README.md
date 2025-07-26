@@ -1,3 +1,8 @@
+cd to AVACTennisEnrollment and run
+'''
+python main.py
+'''
+
 # Tennis Class Registration Tool
 
 This tool automates the process of registering tennis students from one month to the next based on attendance records.
@@ -64,3 +69,9 @@ If you encounter any issues:
 ## Contributing
 
 Feel free to submit issues and enhancement requests! 
+
+
+
+After running the program, complete this checklist:
+ - Enroll anyone that says "Enroll" on the spreadsheet
+ - Enroll anyone that "Failed to Register" in the terminal

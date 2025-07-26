@@ -8,67 +8,8 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 import time
 import os
-from dotenv import load_dotenv
+import csv
 
-# Load environment variables
-load_dotenv()
-
-def check_credentials():
-    """Check if credentials are set in environment variables"""
-    username = os.getenv('AVAC_USERNAME')
-    password = os.getenv('AVAC_PASSWORD')
-    
-    if not username or not password:
-        print("Error: Credentials not found in .env file")
-        print("Please create a .env file with your AVAC credentials:")
-        print("AVAC_USERNAME=your_username")
-        print("AVAC_PASSWORD=your_password")
-        return False
-    return True
-
-def main():
-    """Main function to run the registration tool"""
-    if not check_credentials():
-        return
-
-    chrome_options = Options()
-    chrome_options.add_argument('--log-level=3')  # Suppress console logs
-    chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])  # Disable logging
-    service = Service(ChromeDriverManager().install())
-    driver = webdriver.Chrome(service=service, options=chrome_options)
-
-    try:
-        print("Starting Tennis Registration Tool...")
-        print("Please wait while the browser initializes...")
-        
-        # Login process
-        driver.get("https://avac.clubautomation.com/event/view-all?eventId=243922&schedule=434013&date=03/29/2025&do_action=attendance#event-info")
-        driver.implicitly_wait(3)
-        
-        print("Logging in...")
-        driver.find_element(By.NAME, "login").send_keys(os.getenv('AVAC_USERNAME'))
-        driver.find_element(By.NAME, "password").send_keys(os.getenv('AVAC_PASSWORD'))
-        driver.find_element(By.ID, "loginButton").click()
-        driver.implicitly_wait(3)
-        
-        print("Selecting position...")
-        driver.find_element(By.NAME, "selectPosButton").click()
-        
-        # Process all programs
-        process_programs(driver)
-        
-        print("\nRegistration process completed!")
-        print("Please review the summary above for any issues or manual actions needed.")
-        
-    except Exception as e:
-        print(f"\nAn error occurred: {str(e)}")
-        print("Please check your internet connection and try again.")
-    finally:
-        input("\nPress Enter to close the browser and exit...")
-        driver.quit()
-
-if __name__ == "__main__":
-    main()
 
 def wait_and_click(driver, by, value, timeout=10):
     """Wait for element to be clickable and click it"""
@@ -145,55 +86,165 @@ def select_day(driver, day_id):
     day_link = f"row_day_{day_id}"
     return wait_and_click(driver, By.ID, day_link)
 
+# Helper to normalize and expand day names
+DAY_ALIASES = {
+    'mon': 'monday', 'monday': 'monday',
+    'tue': 'tuesday', 'tues': 'tuesday', 'tuesday': 'tuesday',
+    'wed': 'wednesday', 'weds': 'wednesday', 'wednesday': 'wednesday',
+    'thu': 'thursday', 'thurs': 'thursday', 'thursday': 'thursday',
+    'fri': 'friday', 'friday': 'friday',
+    'sat': 'saturday', 'saturday': 'saturday',
+    'sun': 'sunday', 'sunday': 'sunday',
+}
+def normalize_days(day_field):
+    days = set()
+    if not day_field:
+        return days
+    for part in day_field.lower().replace('/', ',').replace('&', ',').split(','):
+        part = part.strip()
+        for alias, norm in DAY_ALIASES.items():
+            if part.startswith(alias):
+                days.add(norm)
+    return days
+
+def normalize_name(name):
+    return ' '.join(name.strip().lower().split())
+
+# Load special enrollment list at the global scope (names only, case-insensitive, stripped, normalized, ignore headers/sections)
+SPECIAL_ENROLLMENT_NAMES = set()
+try:
+    with open('special_enrollment.csv', newline='', encoding='utf-8') as csvfile:
+        for i, row in enumerate(csv.reader(csvfile)):
+            if not row:
+                continue
+            name = row[0].strip()
+            # Ignore empty, whitespace, or section header rows (e.g., 'Jr. Beginning Picklball')
+            if not name or 'jr.' in name.lower() or 'tots' in name.lower() or 'foundations' in name.lower() or 'competition' in name.lower() or 'training' in name.lower() or 'tournament' in name.lower():
+                continue
+            SPECIAL_ENROLLMENT_NAMES.add(normalize_name(name))
+except Exception:
+    try:
+        with open('special_enrollment.txt', encoding='utf-8') as txtfile:
+            for line in txtfile:
+                parts = line.strip().split(',')
+                if parts:
+                    name = parts[0].strip()
+                    if name:
+                        SPECIAL_ENROLLMENT_NAMES.add(normalize_name(name))
+    except Exception:
+        pass
+print("[DEBUG] Special enrollment names loaded:", SPECIAL_ENROLLMENT_NAMES)
+
 def register_student(driver, student_name: str, program_name: str, day_name: str):
     """Register a student in the current class"""
     try:
+        # Format the name as 'FirstName LastName' for registration
+        # If the name is in 'LastName, FirstName' format, convert it
+        if ',' in student_name:
+            last_name, first_name = [x.strip() for x in student_name.split(",", 1)]
+            formatted_name = f"{first_name} {last_name}"
+        else:
+            formatted_name = student_name
+        norm_formatted_name = normalize_name(formatted_name)
+        print(f"[DEBUG] Checking special enrollment for: '{norm_formatted_name}'")
         # First check if student is already enrolled in this class
-        table_body = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.ID, "table-body"))
-        )
-        
-        # Check all rows for the student's name
-        rows = table_body.find_elements(By.TAG_NAME, "tr")
-        for row in rows:
-            try:
-                if "separator" in row.get_attribute("class") or "attendance-separator" in row.get_attribute("class"):
+        try:
+            attendance_container = WebDriverWait(driver, 5).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, ".attendance_container.attendance_table_container"))
+            )
+            table_body = attendance_container.find_element(By.ID, "table-body")
+            rows = table_body.find_elements(By.TAG_NAME, "tr")
+            for row in rows:
+                try:
+                    name_elements = row.find_elements(By.CSS_SELECTOR, ".second-col a")
+                    for name_element in name_elements:
+                        full_name = name_element.text.strip()
+                        if ',' in full_name:
+                            last_name, first_name = [x.strip() for x in full_name.split(",", 1)]
+                            current_name = f"{first_name} {last_name}"
+                        else:
+                            current_name = full_name
+                        if normalize_name(current_name) == norm_formatted_name:
+                            print(f"  ✓ Already registered: {formatted_name}")
+                            return True
+                except Exception:
                     continue
-                    
-                if not row.find_elements(By.CSS_SELECTOR, "td"):
-                    continue
-                    
-                name_element = row.find_element(By.CSS_SELECTOR, ".second-col a")
-                full_name = name_element.text.strip()
-                last_name, first_name = full_name.split(", ")
-                current_name = f"{first_name} {last_name}"
-                
-                if current_name == student_name:
-                    print(f"  ⚠️  Student already enrolled: {student_name}")
-                    return False
-                    
-            except NoSuchElementException:
-                continue
-            except Exception:
-                continue
-        
+        except Exception:
+            pass
         # If student is not enrolled, proceed with registration
         print(f"  Attempting to register: {student_name}")
-        
+        # Check special enrollment names before enrolling
+        if norm_formatted_name in SPECIAL_ENROLLMENT_NAMES:
+            while True:
+                user_input = input(f"  {formatted_name} is on the special enrollment spreadsheet. Enroll as normal? (y/n): ").strip().lower()
+                if user_input == 'y':
+                    break
+                elif user_input == 'n':
+                    print(f"  Skipping enrollment for {formatted_name} as per user input.")
+                    return True  # Skip normal Add, treat as handled
         # Click the Register User button using JavaScript
         register_button = WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.ID, "registerUserLink"))
         )
         driver.execute_script("arguments[0].click();", register_button)
         time.sleep(0.3)  # Reduced wait time
-        
         # Find and fill the input field
         input_field = WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.ID, "userInput"))
         )
         input_field.clear()  # Clear any existing text
-        input_field.send_keys(student_name)  # Type the student name
+        input_field.send_keys(formatted_name)  # Type the student name
         time.sleep(0.3)  # Reduced wait time
+        # Click the element with name='1' after typing the name
+        try:
+            name1_elem = WebDriverWait(driver, 3).until(
+                EC.element_to_be_clickable((By.NAME, "1"))
+            )
+            name1_elem.click()
+            time.sleep(0.1)
+            # After clicking name='1', click the element with value='Add'
+            add_elem = WebDriverWait(driver, 3).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, "input[value='Add']"))
+            )
+            add_elem.click()
+            time.sleep(0.1)  # Minimal wait for UI update
+            # After pressing Add, scan the attendance table for the child's name
+            try:
+                attendance_container = WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, ".attendance_container.attendance_table_container"))
+                )
+                table_body = attendance_container.find_element(By.ID, "table-body")
+                rows = table_body.find_elements(By.TAG_NAME, "tr")
+                found = False
+                for row in rows:
+                    try:
+                        name_elements = row.find_elements(By.CSS_SELECTOR, ".second-col a")
+                        for name_element in name_elements:
+                            full_name = name_element.text.strip()
+                            if ',' in full_name:
+                                last_name, first_name = [x.strip() for x in full_name.split(",", 1)]
+                                current_name = f"{first_name} {last_name}"
+                            else:
+                                current_name = full_name
+                            if current_name == formatted_name:
+                                found = True
+                                break
+                        if found:
+                            break
+                    except Exception:
+                        continue
+                if found:
+                    print(f"  ✓ Successfully registered: {formatted_name}")
+                    return True
+                else:
+                    print(f"  ✗ Failed to register: {formatted_name}")
+                    return False
+            except Exception as e:
+                print(f"  ✗ Failed to register: {formatted_name} (attendance table not found, error: {e})")
+                return False
+        except Exception as e:
+            print(f"  ⚠️  Could not click element with name='1' or value='Add': {e}")
+            return False
         
         # Wait for the dropdown menu to appear
         dropdown = WebDriverWait(driver, 10).until(
@@ -228,35 +279,42 @@ def register_student(driver, student_name: str, program_name: str, day_name: str
         # Wait for the registration to complete
         time.sleep(0.5)  # Reduced wait time
         
-        # Verify the student was actually registered
-        table_body = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.ID, "table-body"))
-        )
-        rows = table_body.find_elements(By.TAG_NAME, "tr")
-        for row in rows:
-            try:
-                if "separator" in row.get_attribute("class") or "attendance-separator" in row.get_attribute("class"):
+        # Verify the student was actually registered by searching the attendance table in the correct container
+        try:
+            attendance_container = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, ".attendance_container.attendance_table_container"))
+            )
+            table_body = attendance_container.find_element(By.ID, "table-body")
+            rows = table_body.find_elements(By.TAG_NAME, "tr")
+            check_name = formatted_name
+            found = False
+            for row in rows:
+                try:
+                    # Only look for rows with a second-col
+                    name_elements = row.find_elements(By.CSS_SELECTOR, ".second-col a")
+                    for name_element in name_elements:
+                        full_name = name_element.text.strip()
+                        if ',' in full_name:
+                            last_name, first_name = [x.strip() for x in full_name.split(",", 1)]
+                            current_name = f"{first_name} {last_name}"
+                        else:
+                            current_name = full_name
+                        if current_name == check_name:
+                            found = True
+                            break
+                    if found:
+                        break
+                except Exception:
                     continue
-                    
-                if not row.find_elements(By.CSS_SELECTOR, "td"):
-                    continue
-                    
-                name_element = row.find_element(By.CSS_SELECTOR, ".second-col a")
-                full_name = name_element.text.strip()
-                last_name, first_name = full_name.split(", ")
-                current_name = f"{first_name} {last_name}"
-                
-                if current_name == student_name:
-                    print(f"  ✓ Successfully registered: {student_name}")
-                    return True
-                    
-            except NoSuchElementException:
-                continue
-            except Exception:
-                continue
-        
-        print(f"  ✗ Failed to register: {student_name}")
-        return False
+            if found:
+                print(f"  ✓ Successfully registered: {check_name}")
+                return True
+            else:
+                print(f"  ✗ Failed to register: {check_name}")
+                return False
+        except Exception as e:
+            print(f"  ✗ Failed to register: {check_name} (attendance table not found, error: {e})")
+            return False
         
     except Exception as e:
         print(f"Failed to register student {student_name}: {str(e)}")
@@ -422,7 +480,7 @@ def process_attendance(driver, program_name: str, day_name: str) -> tuple:
             print(f"\n  Student: {student['name']}")
             print(f"  Phone: {student['phone']}")
             print(f"  Present: {student['present_count']} out of 4 sessions")
-            response = input("  Would you like to re-enroll this student? (y/n): ")
+            response = 'n'  # Automatically skip re-enrollment prompts
             if response.lower() == 'y':
                 print(f"  ✓ Added to re-enrollment list: {student['name']}")
                 names.append(student['name'])
@@ -453,9 +511,11 @@ def process_programs(driver):
         return
 
     # Get all program links from the first column
-    program_links = driver.find_elements(By.CSS_SELECTOR, "#programBlock a[id^='row_program_']")
-    
-    for program_link in program_links:
+    program_count = len(driver.find_elements(By.CSS_SELECTOR, "#programBlock a[id^='row_program_']"))
+    for i in range(program_count):
+        # Re-fetch the program links every time
+        program_links = driver.find_elements(By.CSS_SELECTOR, "#programBlock a[id^='row_program_']")
+        program_link = program_links[i]
         program_id = program_link.get_attribute("id").replace("row_program_", "")
         program_name = program_link.text
         
@@ -475,7 +535,7 @@ def process_programs(driver):
         # Get all session links from the visible list
         session_links = session_list.find_elements(By.CSS_SELECTOR, "a[id^='row_session_']")
         
-        # Select previous month (second-to-last month)
+        # Always select previous month for attendance (second-to-last session)
         if len(session_links) >= 2:
             previous_session = session_links[-2]  # Second to last month
             previous_session_id = previous_session.get_attribute("id").replace("row_session_", "")
@@ -484,72 +544,64 @@ def process_programs(driver):
             # Click the previous session
             if not select_session(driver, previous_session_id):
                 continue
-                
+            
             # Wait for the day list to be visible
             previous_day_list = wait_for_element_visible(driver, By.ID, f"session_{previous_session_id}_list")
             if not previous_day_list:
                 continue
-                
+            
             # Get all day links from the visible list
             previous_day_links = previous_day_list.find_elements(By.CSS_SELECTOR, "a[id^='row_day_']")
-            
-            # Process both Monday and Wednesday in previous month
-            for previous_day_link in previous_day_links[:2]:  # Only process first two days (Monday and Wednesday)
+            # Process all available days in previous month
+            for previous_day_link in previous_day_links:
                 previous_day_id = previous_day_link.get_attribute("id").replace("row_day_", "")
                 previous_day_name = previous_day_link.text
-                
                 # Click the previous day
                 if not select_day(driver, previous_day_id):
                     continue
-                    
                 # Process previous month attendance and collect names
                 previous_names, _ = process_attendance(driver, program_name, previous_day_name)
                 if previous_names:
                     all_names[program_name][previous_day_name] = previous_names
-                
                 # Go back to program selection
                 if not select_program(driver, program_id):
                     break
+        
+        # Always select the last available month for registration
+        if len(session_links) >= 1:
+            last_session = session_links[-1]  # Last available month
+            last_session_id = last_session.get_attribute("id").replace("row_session_", "")
+            last_session_name = last_session.text
             
-            # Now select current month (last month) for registration
-            current_session = session_links[-1]  # Last month
-            current_session_id = current_session.get_attribute("id").replace("row_session_", "")
-            current_session_name = current_session.text
-            
-            # Click the current session
-            if not select_session(driver, current_session_id):
+            # Click the last session
+            if not select_session(driver, last_session_id):
                 continue
-                
+            
             # Wait for the current day list to be visible
-            current_day_list = wait_for_element_visible(driver, By.ID, f"session_{current_session_id}_list")
-            if not current_day_list:
+            last_day_list = wait_for_element_visible(driver, By.ID, f"session_{last_session_id}_list")
+            if not last_day_list:
                 continue
-                
-            # Get all current day links
-            current_day_links = current_day_list.find_elements(By.CSS_SELECTOR, "a[id^='row_day_']")
             
-            # Process both Monday and Wednesday in current month
-            for current_day_link in current_day_links[:2]:  # Only process first two days (Monday and Wednesday)
-                current_day_id = current_day_link.get_attribute("id").replace("row_day_", "")
-                current_day_name = current_day_link.text
-                
+            # Get all current day links
+            last_day_links = last_day_list.find_elements(By.CSS_SELECTOR, "a[id^='row_day_']")
+            # Process all available days in last available month
+            for last_day_link in last_day_links:
+                last_day_id = last_day_link.get_attribute("id").replace("row_day_", "")
+                last_day_name = last_day_link.text
                 # Click the current day
-                if not select_day(driver, current_day_id):
+                if not select_day(driver, last_day_id):
                     continue
-                
                 # Click attendance button
                 if not wait_and_click(driver, By.ID, "attendance"):
                     continue
-                
                 # Register students for this day
-                if current_day_name in all_names[program_name]:
-                    print(f"\n🔄 Registering students for {program_name} - {current_day_name}")
-                    for student_name in all_names[program_name][current_day_name]:
-                        if register_student(driver, student_name, program_name, current_day_name):
+                if last_day_name in all_names[program_name]:
+                    print(f"\n🔄 Registering students for {program_name} - {last_day_name}")
+                    for student_name in all_names[program_name][last_day_name]:
+                        if register_student(driver, student_name, program_name, last_day_name):
                             print(f"  ✓ Successfully registered: {student_name}")
                         else:
                             print(f"  ✗ Failed to register: {student_name}")
-                
                 # Go back to program selection
                 if not select_program(driver, program_id):
                     break
@@ -562,3 +614,49 @@ def process_programs(driver):
             print(f"  {day}:")
             for name in names:
                 print(f"    {name}")
+
+
+def main():
+    """Main function to run the registration tool"""
+    chrome_options = Options()
+    chrome_options.add_argument('--log-level=3')  # Suppress console logs
+    chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])  # Disable logging
+    # chrome_options.add_argument('--headless=new')
+    # chrome_options.add_argument('--disable-gpu')
+    # chrome_options.add_argument('--no-sandbox')
+    service = Service(ChromeDriverManager().install())
+    driver = webdriver.Chrome(service=service, options=chrome_options)
+
+    try:
+        print("Starting Tennis Registration Tool...")
+        print("Please wait while the browser initializes...")
+        
+        # Login process
+        driver.get("https://avac.clubautomation.com/event/view-all?eventId=243922&schedule=434013&date=03/29/2025&do_action=attendance#event-info")
+        driver.implicitly_wait(3)
+        
+        print("Logging in...")
+        driver.find_element(By.NAME, "login").send_keys('ejor50k@gmail.com')
+        driver.find_element(By.NAME, "password").send_keys('vizta2-tusgAz-cysdaz')
+        driver.find_element(By.ID, "loginButton").click()
+        driver.implicitly_wait(3)
+        
+        print("Selecting position...")
+        driver.find_element(By.NAME, "selectPosButton").click()
+        
+        # Process all programs
+        process_programs(driver)
+        
+        print("\nRegistration process completed!")
+        print("Please review the summary above for any issues or manual actions needed.")
+        
+    except Exception as e:
+        import traceback
+        print(f"\nAn error occurred: {str(e)}")
+        traceback.print_exc()
+        print("Please check your internet connection and try again.")
+    finally:
+        driver.quit()
+
+if __name__ == "__main__":
+    main()

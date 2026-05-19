@@ -33,6 +33,7 @@ This tool automates the process of registering tennis students from one month to
    - Install required packages
    - Ask for your AVAC credentials
    - Save your credentials securely
+   - Optionally create a local `special_enrollment.csv` file from `special_enrollment.example.csv`
 4. The tool will automatically start and:
    - Log in to the AVAC system
    - Process all tennis programs
@@ -57,6 +58,7 @@ The script will display:
 - Waitlisted students will be reported for manual review
 - The script automatically handles the registration process for the next month
 - Your credentials are stored securely in a `.env` file
+- Keep real enrollment notes in `special_enrollment.csv`; this file is ignored by Git and should not be committed.
 
 ## Troubleshooting
 

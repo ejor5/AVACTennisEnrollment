@@ -1,6 +1,10 @@
 # Environment variables
 .env
 
+# Local enrollment notes
+special_enrollment.csv
+special_enrollment.txt
+
 # Python
 __pycache__/
 *.py[cod]
